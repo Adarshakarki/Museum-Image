@@ -1,0 +1,34 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<style>
+  body { margin: 0; background: #111; display: flex; justify-content: center; align-items: center; min-height: 100vh; }
+  img { max-width: 90vw; max-height: 90vh; box-shadow: 0 10px 30px rgba(0,0,0,0.5); }
+</style>
+</head>
+<body>
+  <img id="art-display" src="" alt="Random Painting" />
+  <script>
+    const API = 'https://collectionapi.metmuseum.org/public/collection/v1';
+    let objectIDs = null;
+    async function loadRandomPainting() {
+      if (!objectIDs) {
+        const res = await fetch(`${API}/search?hasImages=true&medium=Paintings&departmentId=11&q=oil`);
+        const data = await res.json();
+        objectIDs = data.objectIDs;
+      }
+      for (let i = 0; i < 8; i++) {
+        const id = objectIDs[Math.floor(Math.random() * objectIDs.length)];
+        const res = await fetch(`${API}/objects/${id}`);
+        const obj = await res.json();
+        const src = obj.primaryImage || obj.primaryImageSmall;
+        if (src) {
+          document.getElementById('art-display').src = src;
+          return;
+        }
+      }
+    }
+    loadRandomPainting();
+  </script>
+</body>
+</html>
