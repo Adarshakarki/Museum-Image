@@ -1,33 +1,142 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
 <style>
-  body { margin: 0; background: #111; display: flex; justify-content: center; align-items: center; min-height: 100vh; }
-  img { max-width: 90vw; max-height: 90vh; box-shadow: 0 10px 30px rgba(0,0,0,0.5); }
+  body {
+    margin: 0;
+    background: #111;
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    align-items: center;
+    color: white;
+    font-family: Arial, sans-serif;
+  }
+  img {
+    max-width: 90vw;
+    max-height: 85vh;
+    box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5);
+  }
+  #info { margin-top: 15px; text-align: center; }
+  #title { font-size: 20px; font-weight: bold; }
+  #artist { margin-top: 5px; color: #bbb; }
+  #museum { margin-top: 5px; color: #777; font-size: 14px; }
 </style>
 </head>
 <body>
-  <img id="art-display" src="" alt="Random Painting" />
+
+  <img id="art-display" src="" alt="Random Artwork">
+  <div id="info">
+    <div id="title"></div>
+    <div id="artist"></div>
+    <div id="museum"></div>
+  </div>
+
   <script>
-    const API = 'https://collectionapi.metmuseum.org/public/collection/v1';
-    let objectIDs = null;
-    async function loadRandomPainting() {
-      if (!objectIDs) {
-        const res = await fetch(`${API}/search?hasImages=true&medium=Paintings&departmentId=11&q=oil`);
-        const data = await res.json();
-        objectIDs = data.objectIDs;
+    const MET_API = "https://collectionapi.metmuseum.org/public/collection/v1";
+    const CLEVELAND_API = "https://openaccess-api.clevelandart.org/api";
+    const AIC_API = "https://api.artic.edu/api/v1";
+
+    let metObjectIDs = null;
+    let clevelandData = null;
+    let aicData = null;
+
+    async function getMetArtwork() {
+      if (!metObjectIDs) {
+        const url = `${MET_API}/search?hasImages=true&medium=Paintings&departmentId=11&q=oil`;
+        const data = await (await fetch(url)).json();
+        metObjectIDs = data.objectIDs || [];
       }
+      if (!metObjectIDs.length) throw new Error("No Met artworks found");
+
       for (let i = 0; i < 8; i++) {
-        const id = objectIDs[Math.floor(Math.random() * objectIDs.length)];
-        const res = await fetch(`${API}/objects/${id}`);
-        const obj = await res.json();
-        const src = obj.primaryImage || obj.primaryImageSmall;
-        if (src) {
-          document.getElementById('art-display').src = src;
-          return;
+        const id = metObjectIDs[Math.floor(Math.random() * metObjectIDs.length)];
+        const obj = await (await fetch(`${MET_API}/objects/${id}`)).json();
+        const image = obj.primaryImage || obj.primaryImageSmall;
+        if (image) {
+          return {
+            title: obj.title || "Untitled",
+            artist: obj.artistDisplayName || "Unknown artist",
+            image,
+            museum: "The Metropolitan Museum of Art"
+          };
         }
       }
+      throw new Error("Met artwork had no usable image");
     }
+
+    async function getClevelandArtwork() {
+      if (!clevelandData) {
+        const url = `${CLEVELAND_API}/artworks/?q=painting&has_image=1&limit=1000`;
+        const data = await (await fetch(url)).json();
+        clevelandData = (data.data || []).filter(a => a.images?.web?.url);
+      }
+      if (!clevelandData.length) throw new Error("No Cleveland artworks found");
+
+      const artwork = clevelandData[Math.floor(Math.random() * clevelandData.length)];
+      const artist = artwork.creators?.length
+        ? artwork.creators.map(c => c.description || c.name).filter(Boolean).join(", ")
+        : "Unknown artist";
+
+      return {
+        title: artwork.title || "Untitled",
+        artist,
+        image: artwork.images.web.url,
+        museum: "Cleveland Museum of Art"
+      };
+    }
+
+    async function getAICArtwork() {
+      if (!aicData) {
+        const url = `${AIC_API}/artworks/search?q=painting&query[term][is_public_domain]=true&limit=100&fields=id,title,artist_display,date_display,image_id`;
+        const data = await (await fetch(url)).json();
+        aicData = (data.data || []).filter(a => a.image_id);
+      }
+      if (!aicData.length) throw new Error("No AIC artworks found");
+
+      const artwork = aicData[Math.floor(Math.random() * aicData.length)];
+      const image = `https://www.artic.edu/iiif/2/${artwork.image_id}/full/1200,/0/default.jpg`;
+
+      return {
+        title: artwork.title || "Untitled",
+        artist: artwork.artist_display || "Unknown artist",
+        image,
+        museum: "Art Institute of Chicago"
+      };
+    }
+
+    const museums = [getMetArtwork, getClevelandArtwork, getAICArtwork];
+
+    async function loadRandomPainting() {
+      const img = document.getElementById("art-display");
+      const title = document.getElementById("title");
+      const artist = document.getElementById("artist");
+      const museum = document.getElementById("museum");
+
+      const shuffled = [...museums].sort(() => Math.random() - 0.5);
+
+      for (const getArtwork of shuffled) {
+        try {
+          const artwork = await getArtwork();
+          img.src = artwork.image;
+          img.alt = artwork.title;
+          title.textContent = artwork.title;
+          artist.textContent = artwork.artist;
+          museum.textContent = artwork.museum;
+          return;
+        } catch (error) {
+          console.error("Museum failed:", error);
+        }
+      }
+
+      title.textContent = "Could not load artwork";
+      artist.textContent = "";
+      museum.textContent = "";
+    }
+
     loadRandomPainting();
   </script>
 </body>
