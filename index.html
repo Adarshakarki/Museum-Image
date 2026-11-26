@@ -1,165 +1,512 @@
+
 <!DOCTYPE html>
 <html lang="en">
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+<title>Random Art Gallery</title>
+
 <style>
+  * {
+    box-sizing: border-box;
+  }
+
   body {
     margin: 0;
+    width: 100%;
+    height: 100vh;
+    overflow: hidden;
     background: #111;
-    min-height: 100vh;
-    display: flex;
-    flex-direction: column;
-    justify-content: center;
-    align-items: center;
     color: white;
     font-family: Arial, sans-serif;
   }
-  img {
-    max-width: 90vw;
-    max-height: 85vh;
-    box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5);
+
+  #background {
+    position: fixed;
+    inset: -30px;
+    background-position: center;
+    background-size: cover;
+    filter: blur(30px) brightness(0.4);
+    opacity: 0;
+    transition: opacity 0.8s ease;
   }
-  #info { margin-top: 15px; text-align: center; }
-  #title { font-size: 20px; font-weight: bold; }
-  #artist { margin-top: 5px; color: #bbb; }
-  #museum { margin-top: 5px; color: #777; font-size: 14px; }
+
+  #background.visible {
+    opacity: 1;
+  }
+
+  #art-display {
+    position: fixed;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    object-fit: contain;
+    z-index: 1;
+    opacity: 0;
+    transition: opacity 0.5s ease;
+  }
+
+  #art-display.visible {
+    opacity: 1;
+  }
+
+  #info {
+    position: fixed;
+    bottom: 25px;
+    right: 30px;
+    z-index: 3;
+    text-align: right;
+    max-width: min(450px, 80vw);
+    padding: 15px 20px;
+    background: rgba(0, 0, 0, 0.45);
+    backdrop-filter: blur(12px);
+    border-radius: 8px;
+    transition: opacity 0.3s ease;
+    pointer-events: none;
+  }
+
+  #info.hidden {
+    opacity: 0;
+  }
+
+  #title {
+    font-size: 19px;
+    font-weight: bold;
+  }
+
+  #artist {
+    margin-top: 6px;
+    color: #ccc;
+    font-size: 14px;
+  }
+
+  #museum {
+    margin-top: 5px;
+    color: #999;
+    font-size: 12px;
+  }
+
+  #loading {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 3px;
+    z-index: 10;
+    background: rgba(255,255,255,0.08);
+    opacity: 0;
+    transition: opacity 0.3s ease;
+  }
+
+  #loading.active {
+    opacity: 1;
+  }
+
+  #progress {
+    width: 30%;
+    height: 100%;
+    background: white;
+    animation: loading 1.3s ease-in-out infinite;
+  }
+
+  @keyframes loading {
+    0% {
+      transform: translateX(-110%);
+    }
+    100% {
+      transform: translateX(440%);
+    }
+  }
+
+  #slideshow-status {
+    position: fixed;
+    top: 18px;
+    right: 20px;
+    z-index: 4;
+    font-size: 12px;
+    color: #ddd;
+    background: rgba(0,0,0,0.4);
+    padding: 8px 12px;
+    border-radius: 5px;
+    opacity: 0;
+    transition: opacity 0.3s ease;
+  }
+
+  #slideshow-status.visible {
+    opacity: 1;
+  }
+
+  @media (max-width: 600px) {
+    #info {
+      right: 12px;
+      bottom: 12px;
+      max-width: 90vw;
+      padding: 12px 15px;
+    }
+
+    #title {
+      font-size: 16px;
+    }
+
+    #artist {
+      font-size: 12px;
+    }
+
+    #museum {
+      font-size: 11px;
+    }
+  }
 </style>
 </head>
+
 <body>
 
-  <img id="art-display" src="" alt="Random Artwork">
-  <div id="info">
-    <div id="title"></div>
-    <div id="artist"></div>
-    <div id="museum"></div>
-  </div>
+<div id="background"></div>
 
-  <script>
-    const MET_API = "https://collectionapi.metmuseum.org/public/collection/v1";
-    const CLEVELAND_API = "https://openaccess-api.clevelandart.org/api";
-    const AIC_API = "https://api.artic.edu/api/v1";
+<img id="art-display" alt="Random Artwork">
 
-    let metObjectIDs = null;
-    let clevelandData = null;
-    let aicData = null;
+<div id="loading">
+  <div id="progress"></div>
+</div>
 
-    function preloadImage(src) {
-      return new Promise((resolve, reject) => {
-        const probe = new Image();
-        probe.onload = () => resolve(src);
-        probe.onerror = reject;
-        probe.src = src;
-      });
-    }
+<div id="info">
+  <div id="title"></div>
+  <div id="artist"></div>
+  <div id="museum"></div>
+</div>
 
-    async function getMetArtwork() {
-      if (!metObjectIDs) {
-        const url = `${MET_API}/search?hasImages=true&medium=Paintings&departmentId=11&q=oil`;
-        const data = await (await fetch(url)).json();
-        metObjectIDs = data.objectIDs || [];
-      }
-      if (!metObjectIDs.length) throw new Error("No Met artworks found");
+<div id="slideshow-status">Slideshow ON · 60 seconds</div>
 
-      for (let i = 0; i < 8; i++) {
-        const id = metObjectIDs[Math.floor(Math.random() * metObjectIDs.length)];
-        const obj = await (await fetch(`${MET_API}/objects/${id}`)).json();
-        const image = obj.primaryImage || obj.primaryImageSmall;
-        if (!image) continue;
+<script>
+const MET_API =
+  "https://collectionapi.metmuseum.org/public/collection/v1";
+
+const CLEVELAND_API =
+  "https://openaccess-api.clevelandart.org/api";
+
+const AIC_API =
+  "https://api.artic.edu/api/v1";
+
+let metObjectIDs = null;
+let clevelandData = null;
+let aicData = null;
+
+let slideshowInterval = null;
+let currentRequest = 0;
+
+const img = document.getElementById("art-display");
+const background = document.getElementById("background");
+const title = document.getElementById("title");
+const artist = document.getElementById("artist");
+const museum = document.getElementById("museum");
+const info = document.getElementById("info");
+const loading = document.getElementById("loading");
+const slideshowStatus = document.getElementById("slideshow-status");
+
+let infoVisible = true;
+
+try {
+  infoVisible = localStorage.getItem("artInfoVisible") !== "false";
+} catch (e) {}
+
+function updateInfoVisibility() {
+  info.classList.toggle("hidden", !infoVisible);
+}
+
+updateInfoVisibility();
+
+function preloadImage(src) {
+  return new Promise((resolve, reject) => {
+    const probe = new Image();
+
+    probe.onload = () => resolve(src);
+    probe.onerror = reject;
+
+    probe.src = src;
+  });
+}
+
+async function getMetArtwork() {
+  if (!metObjectIDs) {
+    const url =
+      `${MET_API}/search?hasImages=true&medium=Paintings&departmentId=11&q=oil`;
+
+    const response = await fetch(url);
+    if (!response.ok) throw new Error("Met API error");
+
+    const data = await response.json();
+    metObjectIDs = data.objectIDs || [];
+  }
+
+  if (!metObjectIDs.length) {
+    throw new Error("No Met artworks found");
+  }
+
+  for (let i = 0; i < 8; i++) {
+    const id = metObjectIDs[
+      Math.floor(Math.random() * metObjectIDs.length)
+    ];
+
+    const response = await fetch(`${MET_API}/objects/${id}`);
+    if (!response.ok) continue;
+
+    const obj = await response.json();
+
+    const image = obj.primaryImage || obj.primaryImageSmall;
+    const preview = obj.primaryImageSmall || image;
+
+    if (!image) continue;
+
+    try {
+      await preloadImage(preview);
+
+      return {
+        title: obj.title || "Untitled",
+        artist: obj.artistDisplayName || "Unknown artist",
+        preview,
+        image,
+        museum: "The Metropolitan Museum of Art"
+      };
+    } catch {}
+  }
+
+  throw new Error("No loadable Met image found");
+}
+
+async function getClevelandArtwork() {
+  if (!clevelandData) {
+    const url =
+      `${CLEVELAND_API}/artworks/?q=painting&has_image=1&limit=1000`;
+
+    const response = await fetch(url);
+    if (!response.ok) throw new Error("Cleveland API error");
+
+    const data = await response.json();
+
+    clevelandData = (data.data || []).filter(
+      a => a.images?.web?.url
+    );
+  }
+
+  if (!clevelandData.length) {
+    throw new Error("No Cleveland artworks found");
+  }
+
+  for (let i = 0; i < 8; i++) {
+    const artwork = clevelandData[
+      Math.floor(Math.random() * clevelandData.length)
+    ];
+
+    const image = artwork.images.web.url;
+
+    try {
+      await preloadImage(image);
+
+      const artist = artwork.creators?.length
+        ? artwork.creators
+            .map(c => c.description || c.name)
+            .filter(Boolean)
+            .join(", ")
+        : "Unknown artist";
+
+      return {
+        title: artwork.title || "Untitled",
+        artist,
+        preview: image,
+        image,
+        museum: "Cleveland Museum of Art"
+      };
+    } catch {}
+  }
+
+  throw new Error("No loadable Cleveland image found");
+}
+
+async function getAICArtwork() {
+  if (!aicData) {
+    const url =
+      `${AIC_API}/artworks/search?q=painting&query[term][is_public_domain]=true&limit=100&fields=id,title,artist_display,date_display,image_id`;
+
+    const response = await fetch(url);
+    if (!response.ok) throw new Error("AIC API error");
+
+    const data = await response.json();
+
+    aicData = (data.data || []).filter(a => a.image_id);
+  }
+
+  if (!aicData.length) {
+    throw new Error("No AIC artworks found");
+  }
+
+  for (let i = 0; i < 8; i++) {
+    const artwork = aicData[
+      Math.floor(Math.random() * aicData.length)
+    ];
+
+    const preview =
+      `https://www.artic.edu/iiif/2/${artwork.image_id}/full/400,/0/default.jpg`;
+
+    const image =
+      `https://www.artic.edu/iiif/2/${artwork.image_id}/full/max/0/default.jpg`;
+
+    try {
+      await preloadImage(preview);
+
+      return {
+        title: artwork.title || "Untitled",
+        artist: artwork.artist_display || "Unknown artist",
+        preview,
+        image,
+        museum: "Art Institute of Chicago"
+      };
+    } catch {}
+  }
+
+  throw new Error("No loadable AIC image found");
+}
+
+const museums = [
+  getMetArtwork,
+  getClevelandArtwork,
+  getAICArtwork
+];
+
+async function loadRandomPainting() {
+  const request = ++currentRequest;
+
+  loading.classList.add("active");
+
+  const shuffled = [...museums].sort(
+    () => Math.random() - 0.5
+  );
+
+  for (const getArtwork of shuffled) {
+    if (request !== currentRequest) return;
+
+    try {
+      const artwork = await getArtwork();
+
+      if (request !== currentRequest) return;
+
+      title.textContent = artwork.title;
+      artist.textContent = artwork.artist;
+      museum.textContent = artwork.museum;
+
+      img.classList.remove("visible");
+
+      img.src = artwork.preview;
+
+      await preloadImage(artwork.preview);
+
+      if (request !== currentRequest) return;
+
+      img.classList.add("visible");
+
+      background.style.backgroundImage =
+        `url("${artwork.preview}")`;
+
+      background.classList.add("visible");
+
+      if (artwork.image !== artwork.preview) {
         try {
-          await preloadImage(image);
-          return {
-            title: obj.title || "Untitled",
-            artist: obj.artistDisplayName || "Unknown artist",
-            image,
-            museum: "The Metropolitan Museum of Art"
-          };
-        } catch {}
-      }
-      throw new Error("No loadable Met image found");
-    }
+          await preloadImage(artwork.image);
 
-    async function getClevelandArtwork() {
-      if (!clevelandData) {
-        const url = `${CLEVELAND_API}/artworks/?q=painting&has_image=1&limit=1000`;
-        const data = await (await fetch(url)).json();
-        clevelandData = (data.data || []).filter(a => a.images?.web?.url);
-      }
-      if (!clevelandData.length) throw new Error("No Cleveland artworks found");
+          if (request !== currentRequest) return;
 
-      for (let i = 0; i < 8; i++) {
-        const artwork = clevelandData[Math.floor(Math.random() * clevelandData.length)];
-        const image = artwork.images.web.url;
-        try {
-          await preloadImage(image);
-          const artist = artwork.creators?.length
-            ? artwork.creators.map(c => c.description || c.name).filter(Boolean).join(", ")
-            : "Unknown artist";
-          return {
-            title: artwork.title || "Untitled",
-            artist,
-            image,
-            museum: "Cleveland Museum of Art"
-          };
-        } catch {}
-      }
-      throw new Error("No loadable Cleveland image found");
-    }
-
-    async function getAICArtwork() {
-      if (!aicData) {
-        const url = `${AIC_API}/artworks/search?q=painting&query[term][is_public_domain]=true&limit=100&fields=id,title,artist_display,date_display,image_id`;
-        const data = await (await fetch(url)).json();
-        aicData = (data.data || []).filter(a => a.image_id);
-      }
-      if (!aicData.length) throw new Error("No AIC artworks found");
-
-      for (let i = 0; i < 8; i++) {
-        const artwork = aicData[Math.floor(Math.random() * aicData.length)];
-        const image = `https://www.artic.edu/iiif/2/${artwork.image_id}/full/843,/0/default.jpg`;
-        try {
-          await preloadImage(image);
-          return {
-            title: artwork.title || "Untitled",
-            artist: artwork.artist_display || "Unknown artist",
-            image,
-            museum: "Art Institute of Chicago"
-          };
-        } catch {}
-      }
-      throw new Error("No loadable AIC image found");
-    }
-
-    const museums = [getMetArtwork, getClevelandArtwork, getAICArtwork];
-
-    async function loadRandomPainting() {
-      const img = document.getElementById("art-display");
-      const title = document.getElementById("title");
-      const artist = document.getElementById("artist");
-      const museum = document.getElementById("museum");
-
-      const shuffled = [...museums].sort(() => Math.random() - 0.5);
-
-      for (const getArtwork of shuffled) {
-        try {
-          const artwork = await getArtwork();
           img.src = artwork.image;
-          img.alt = artwork.title;
-          title.textContent = artwork.title;
-          artist.textContent = artwork.artist;
-          museum.textContent = artwork.museum;
-          return;
+
+          background.style.backgroundImage =
+            `url("${artwork.image}")`;
+
         } catch (error) {
-          console.error("Museum failed:", error);
+          console.warn("High resolution image failed:", error);
         }
       }
 
-      title.textContent = "Could not load artwork";
-      artist.textContent = "";
-      museum.textContent = "";
-    }
+      if (request === currentRequest) {
+        loading.classList.remove("active");
+      }
 
+      return;
+
+    } catch (error) {
+      console.error("Museum failed:", error);
+    }
+  }
+
+  if (request === currentRequest) {
+    title.textContent = "Could not load artwork";
+    artist.textContent = "";
+    museum.textContent = "";
+    loading.classList.remove("active");
+  }
+}
+
+document.addEventListener("keydown", event => {
+  if (
+    event.target.tagName === "INPUT" ||
+    event.target.tagName === "TEXTAREA" ||
+    event.ctrlKey ||
+    event.altKey ||
+    event.metaKey
+  ) return;
+
+  const key = event.key.toLowerCase();
+
+  if (key === "r") {
     loadRandomPainting();
-  </script>
+  }
+
+  if (key === "f") {
+    infoVisible = !infoVisible;
+
+    updateInfoVisibility();
+
+    try {
+      localStorage.setItem(
+        "artInfoVisible",
+        infoVisible
+      );
+    } catch (e) {}
+  }
+
+  if (key === "s") {
+    toggleSlideshow();
+  }
+});
+
+function toggleSlideshow() {
+  if (slideshowInterval) {
+    clearInterval(slideshowInterval);
+    slideshowInterval = null;
+
+    slideshowStatus.textContent = "Slideshow OFF";
+    slideshowStatus.classList.add("visible");
+
+    setTimeout(() => {
+      if (!slideshowInterval) {
+        slideshowStatus.classList.remove("visible");
+      }
+    }, 2000);
+
+  } else {
+    slideshowInterval = setInterval(
+      loadRandomPainting,
+      60000
+    );
+
+    slideshowStatus.textContent =
+      "Slideshow ON · 60 seconds";
+
+    slideshowStatus.classList.add("visible");
+  }
+}
+
+loadRandomPainting();
+
+</script>
+
 </body>
 </html>
